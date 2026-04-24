@@ -1,0 +1,11 @@
+[package]
+name = "rauthy_controller"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures = "0.3.32"
+k8s-openapi = { version = "0.27.1", features = ["latest"] }
+kube = { version = "3.1.0", features = ["runtime", "client", "derive"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
