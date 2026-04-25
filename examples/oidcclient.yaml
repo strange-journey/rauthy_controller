@@ -13,4 +13,4 @@ spec:
     - https://example-webapp.local/
   allowed_origins:
     - https://example-webapp.local
-  secret_name: example-webapp-oidc-secret
+  secret_name: example-webapp-oidc-secret-custom-name
