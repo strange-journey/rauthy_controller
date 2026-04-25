@@ -1,0 +1,16 @@
+apiVersion: rauthy.io/v1alpha1
+kind: OIDCClient
+metadata:
+  name: example-webapp
+  namespace: default
+spec:
+  client_id: example-webapp
+  confidential: true
+  name: Example Web App
+  redirect_uris:
+    - https://example-webapp.local/auth/callback
+  post_logout_redirect_uris:
+    - https://example-webapp.local/
+  allowed_origins:
+    - https://example-webapp.local
+  secret_name: example-webapp-oidc-secret
