@@ -108,6 +108,13 @@ pub struct OIDCClientSpec {
     /// The Secret will contain `client_id` and `client_secret` keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_name: Option<String>,
+
+    /// Number of hours for which the existing client secret should be cached by the controller.
+    /// This optionally allows graceful secret rotation and keeps the current Rauthy secret cached in-memory.
+    /// A value of 1-24 hours is allowwed here.
+    /// TODO: validate that the value is within the allowed range (https://kube.rs/controllers/admission/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_cache_current_hours: Option<u32>,
 }
 
 fn default_true() -> bool {
@@ -144,6 +151,51 @@ fn default_scopes() -> Vec<String> {
 
 fn default_default_scopes() -> Vec<String> {
     vec!["openid".to_string()]
+}
+
+impl OIDCClientSpec {
+    pub fn resolve_secret_name(&self) -> Option<String> {
+        self.confidential.then(|| {
+            self.secret_name
+                .clone()
+                .unwrap_or_else(|| format!("{}-oidc-secret", self.client_id))
+        })
+    }
+    pub fn to_rauthy_new_client_request(&self) -> crate::rauthy::NewClientRequest {
+        crate::rauthy::NewClientRequest {
+            id: self.client_id.clone(), 
+            name: self.name.clone(), 
+            confidential: self.confidential, 
+            redirect_uris: self.redirect_uris.clone(), 
+            post_logout_redirect_uris: self.post_logout_redirect_uris.clone() 
+        }
+    }
+    
+    pub fn to_rauthy_update_client_request(&self) -> crate::rauthy::UpdateClientRequest {
+        crate::rauthy::UpdateClientRequest {
+            id: self.client_id.clone(),
+            name: self.name.clone(),
+            confidential: self.confidential,
+            redirect_uris: self.redirect_uris.clone(),
+            post_logout_redirect_uris: self.post_logout_redirect_uris.clone(),
+            allowed_origins: self.allowed_origins.clone(),
+            enabled: self.enabled,
+            flows_enabled: self.flows_enabled.clone(),
+            access_token_alg: self.access_token_alg.clone(),
+            id_token_alg: self.id_token_alg.clone(),
+            auth_code_lifetime: self.auth_code_lifetime,
+            access_token_lifetime: self.access_token_lifetime,
+            scopes: self.scopes.clone(),
+            default_scopes: self.default_scopes.clone(),
+            challenges: self.challenges.clone(),
+            force_mfa: self.force_mfa,
+            client_uri: self.client_uri.clone(),
+            contacts: self.contacts.clone(),
+            backchannel_logout_uri: self.backchannel_logout_uri.clone(),
+            restrict_group_prefix: self.restrict_group_prefix.clone(),
+            scim: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -198,6 +250,7 @@ impl OIDCClient {
         let is_new = !ctx.rauthy.client_exists(client_id).await?;
         (if is_new {
             // if this is a new client, create with API and then update rest of fields
+            info!(client_id = %client_id, "client not found in Rauthy, creating");
             ctx.rauthy.create_client(&self.spec.to_rauthy_new_client_request())
             .await
             .and(
@@ -206,6 +259,7 @@ impl OIDCClient {
             )
         }
         else {
+            info!(client_id = %client_id, "client exists in Rauthy, updating");
             ctx.rauthy.update_client(&self.spec.to_rauthy_update_client_request())
             .await
         }).inspect_err(|_| {
@@ -214,7 +268,7 @@ impl OIDCClient {
 
         if self.spec.confidential {
             // call ensure_secret here..
-            self.ensure_secret(&ctx)
+            self.ensure_secret(&ctx, is_new)
             .await
             .inspect_err(|_| {
                 // add error message to status here
@@ -227,28 +281,47 @@ impl OIDCClient {
         Ok(Action::requeue(Duration::from_secs(5)))
     }
 
-    async fn ensure_secret(&self, ctx: &Context) -> Result<()> {
+    async fn ensure_secret(&self, ctx: &Context, is_new_client: bool) -> Result<()> {
         let ns = self.namespace().unwrap();
         let Some(secret_name) = self.spec.resolve_secret_name() else { return Ok(()) };
         let secrets: Api<Secret> = Api::namespaced(ctx.client.clone(), &ns);
         
         let client_id = &self.spec.client_id;
         let client_id_bytes = ByteString(client_id.clone().into_bytes());
-        let client_secret_bytes = ByteString(ctx.rauthy.get_client_secret(client_id).await?.into_bytes());
 
-        if let Some(current_secret) = secrets.get_opt(&secret_name).await? {
-            // if secret exists and matches, no apply is necessary
+        let client_secret_bytes = if let Some(current_secret) = secrets.get_opt(&secret_name).await? {
+            let client_secret_bytes = ByteString(ctx.rauthy.get_client_secret(client_id).await?.into_bytes());
+
             if current_secret.data.is_some_and(|data| {
                 data.get("client_id") == Some(&client_id_bytes) 
                 && data.get("client_secret") == Some(&client_secret_bytes)
             }) {
+                // if Secret exists and matches, no apply is necessary
                 return Ok(())
             }
             else {
-                // server-side apply will not be able to replace an immutable Secret, even with force
+                // the existing kube Secret does not match the Rauthy client credentials, 
+                // so delete it to allow re-creation with correct values.
+                // server-side apply will not be able to replace an immutable Secret, even with force.
+                info!(client_id = %client_id, secret_name = %secret_name, "existing Secret does not match, deleting");
                 secrets.delete(&secret_name, &DeleteParams::default()).await.map_err(Error::KubeError)?;
+                client_secret_bytes
             }
         }
+        else {
+            // the kube Secret does not exist, so generate a new one
+            let cache_current_hours = match is_new_client {
+                true => None, // for new clients, we should avoid caching the unused initial secret
+                false => self.spec.secret_cache_current_hours
+            };
+            info!(
+                client_id = %client_id, 
+                secret_name = %secret_name, 
+                cache_current_hours = ?cache_current_hours, 
+                "generating new client secret"
+            );
+            ByteString(ctx.rauthy.generate_client_secret(client_id, cache_current_hours).await?.into_bytes())
+        };
         
         let oref = self.controller_owner_ref(&()).unwrap();
         let secret = Secret {
@@ -274,58 +347,19 @@ impl OIDCClient {
             &PatchParams::apply(FIELD_MANAGER),
             &kube::api::Patch::Apply(secret)
         ).await.map_err(Error::KubeError)?;
+        info!(client_id = %client_id, secret_name = %secret_name, "created Kubernetes Secret with client credentials");
 
         Ok(())
     }
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<Action> {
         let client_id = &self.spec.client_id;
+        info!(
+            client_id = %client_id,
+            resource = %self.name_any(),
+            "deleting Rauthy client"
+        );
         ctx.rauthy.delete_client(client_id).await?;
         Ok(Action::await_change())
-    }
-}
-
-impl OIDCClientSpec {
-    pub fn resolve_secret_name(&self) -> Option<String> {
-        self.confidential.then(|| {
-            self.secret_name
-                .clone()
-                .unwrap_or_else(|| format!("{}-oidc-secret", self.client_id))
-        })
-    }
-    pub fn to_rauthy_new_client_request(&self) -> crate::rauthy::NewClientRequest {
-        crate::rauthy::NewClientRequest {
-            id: self.client_id.clone(), 
-            name: self.name.clone(), 
-            confidential: self.confidential, 
-            redirect_uris: self.redirect_uris.clone(), 
-            post_logout_redirect_uris: self.post_logout_redirect_uris.clone() 
-        }
-    }
-    
-    pub fn to_rauthy_update_client_request(&self) -> crate::rauthy::UpdateClientRequest {
-        crate::rauthy::UpdateClientRequest {
-            id: self.client_id.clone(),
-            name: self.name.clone(),
-            confidential: self.confidential,
-            redirect_uris: self.redirect_uris.clone(),
-            post_logout_redirect_uris: self.post_logout_redirect_uris.clone(),
-            allowed_origins: self.allowed_origins.clone(),
-            enabled: self.enabled,
-            flows_enabled: self.flows_enabled.clone(),
-            access_token_alg: self.access_token_alg.clone(),
-            id_token_alg: self.id_token_alg.clone(),
-            auth_code_lifetime: self.auth_code_lifetime,
-            access_token_lifetime: self.access_token_lifetime,
-            scopes: self.scopes.clone(),
-            default_scopes: self.default_scopes.clone(),
-            challenges: self.challenges.clone(),
-            force_mfa: self.force_mfa,
-            client_uri: self.client_uri.clone(),
-            contacts: self.contacts.clone(),
-            backchannel_logout_uri: self.backchannel_logout_uri.clone(),
-            restrict_group_prefix: self.restrict_group_prefix.clone(),
-            scim: None,
-        }
     }
 }
