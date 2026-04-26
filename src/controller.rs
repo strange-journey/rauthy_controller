@@ -449,13 +449,47 @@ impl OIDCClient {
     }
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<Action> {
+        let mut status = self.status.clone().unwrap_or_default();
+        let ns = self.namespace().unwrap();
+        let oidc_clients: Api<OIDCClient> = Api::namespaced(ctx.client.clone(), &ns);
         let client_id = &self.spec.client_id;
         info!(
             client_id = %client_id,
             resource = %self.name_any(),
             "deleting Rauthy client"
         );
-        ctx.rauthy.delete_client(client_id).await?;
+        
+        set_condition(
+            &mut status.conditions, 
+            CONDITION_READY, 
+            "False", 
+            "Deleting", 
+            "OIDCClient is being deleted", 
+            self.metadata.generation.unwrap_or(1));
+
+        oidc_clients.patch_status(
+            &self.name_any(),
+            &PatchParams::default(),
+            &Patch::Merge(json!({ "status": status }))
+        ).await?;
+
+        if let Err(e) = ctx.rauthy.delete_client(client_id).await {
+            set_condition(
+                &mut status.conditions, 
+                CONDITION_READY, 
+                "False", 
+                "DeletionFailed", 
+                &e.to_string(), 
+                self.metadata.generation.unwrap_or(1));
+
+            oidc_clients.patch_status(
+                &self.name_any(),
+                &PatchParams::default(),
+                &Patch::Merge(json!({ "status": status }))
+            ).await?;
+            
+            return Err(e);
+        }
         Ok(Action::await_change())
     }
 }
