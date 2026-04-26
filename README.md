@@ -1,4 +1,4 @@
-# rauthy_controller
+# rauthy-controller
 
 A Kubernetes controller for managing [Rauthy](https://github.com/sebadob/rauthy) OIDC clients
 as native Kubernetes resources, built with [kube-rs](https://github.com/kube-rs/kube/).
@@ -67,7 +67,6 @@ See [examples/oidcclient.yaml](examples/oidcclient.yaml) for an annotated exampl
 ## TODO
 
 - [ ] Deployment examples and Helm chart
-- [ ] Status conditions following the Kubernetes API conventions
 - [ ] Event emission on reconcile lifecycle
 - [ ] Configurable requeue interval for secret reconciliation via spec or annotation
 - [ ] Additional CRDs to manage other Rauthy resources

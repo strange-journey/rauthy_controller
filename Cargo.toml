@@ -1,5 +1,5 @@
 [package]
-name = "rauthy_controller"
+name = "rauthy-controller"
 version = "0.1.0"
 edition = "2024"
 default-run = "controller"

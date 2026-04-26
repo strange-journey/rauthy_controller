@@ -1522,7 +1522,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rauthy_controller"
+name = "rauthy-controller"
 version = "0.1.0"
 dependencies = [
  "futures",
