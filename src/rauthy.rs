@@ -76,7 +76,7 @@ impl RauthyClient {
     pub fn new(base_url: String, api_key: String) -> Result<Self> {
         let client = Client::builder()
             .build()
-            .map_err(|e| Error::RauthyApiError(format!("Failed to build HTTP client: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("Failed to build HTTP client: {e}") })?;
 
         Ok(Self { client, base_url, api_key })
     }
@@ -92,16 +92,17 @@ impl RauthyClient {
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("GET /clients/{id}: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("GET /clients/{id}: {e}") })?;
         
         match res.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
             status => {
                 let body = res.text().await.unwrap_or_default();
-                Err(Error::RauthyApiError(format!(
-                    "GET /clients/{id} returned {status}: {body}"
-                )))
+                Err(Error::RauthyApiError {
+                    status: Some(status.as_u16()),
+                    message: format!("GET /clients/{id} returned {status}: {body}"),
+                })
             }
         }
     }
@@ -114,14 +115,15 @@ impl RauthyClient {
             .json(req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("POST /clients: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("POST /clients: {e}") })?;
             
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(Error::RauthyApiError(format!(
-                "POST /clients returned {status}: {body}"
-            )));
+            return Err(Error::RauthyApiError {
+                status: Some(status.as_u16()),
+                message: format!("POST /clients returned {status}: {body}"),
+            });
         }
         Ok(())
     }
@@ -134,15 +136,15 @@ impl RauthyClient {
             .json(req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("PUT /clients/{}: {e}", req.id)))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("PUT /clients/{}: {e}", req.id) })?;
             
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(Error::RauthyApiError(format!(
-                "PUT /clients/{} returned {status}: {body}",
-                req.id
-            )));
+            return Err(Error::RauthyApiError {
+                status: Some(status.as_u16()),
+                message: format!("PUT /clients/{} returned {status}: {body}", req.id),
+            });
         }
         Ok(())
     }
@@ -154,15 +156,16 @@ impl RauthyClient {
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("DELETE /clients/{id}: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("DELETE /clients/{id}: {e}") })?;
 
         match res.status() {
             StatusCode::OK | StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
             status => {
                 let body = res.text().await.unwrap_or_default();
-                Err(Error::RauthyApiError(format!(
-                    "DELETE /clients/{id} returned {status}: {body}"
-                )))
+                Err(Error::RauthyApiError {
+                    status: Some(status.as_u16()),
+                    message: format!("DELETE /clients/{id} returned {status}: {body}"),
+                })
             }
         }
     }
@@ -174,23 +177,24 @@ impl RauthyClient {
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("POST /clients/{id}/secret: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("POST /clients/{id}/secret: {e}") })?;
 
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(Error::RauthyApiError(format!(
-                "POST /clients/{id}/secret returned {status}: {body}"
-            )));
+            return Err(Error::RauthyApiError {
+                status: Some(status.as_u16()),
+                message: format!("POST /clients/{id}/secret returned {status}: {body}"),
+            });
         }
 
         let secret_response: ClientSecretResponse = res
             .json()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("failed to parse secret response: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("failed to parse secret response: {e}") })?;
 
         secret_response.secret.ok_or_else(|| {
-            Error::RauthyApiError(format!("The API response did not contain the secret for client {id}"))
+            Error::RauthyApiError { status: None, message: format!("The API response did not contain the secret for client {id}") }
         })
     }
 
@@ -203,23 +207,24 @@ impl RauthyClient {
             .json(&req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("POST /clients/{id}/secret: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("PUT /clients/{id}/secret: {e}") })?;
     
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(Error::RauthyApiError(format!(
-                "PUT /clients/{id}/secret returned {status}: {body}"
-            )));
+            return Err(Error::RauthyApiError {
+                status: Some(status.as_u16()),
+                message: format!("PUT /clients/{id}/secret returned {status}: {body}"),
+            });
         }
 
         let secret_response: ClientSecretResponse = res
             .json()
             .await
-            .map_err(|e| Error::RauthyApiError(format!("failed to parse secret response: {e}")))?;
+            .map_err(|e| Error::RauthyApiError { status: None, message: format!("failed to parse secret response: {e}") })?;
 
         secret_response.secret.ok_or_else(|| {
-            Error::RauthyApiError(format!("The API response did not contain the secret for client {id}"))
+            Error::RauthyApiError { status: None, message: format!("The API response did not contain the secret for client {id}") }
         })
     }
 }

@@ -10,8 +10,8 @@ pub enum Error {
     #[error("Kubernetes error: {0}")]
     KubeError(#[from] kube::Error),
 
-    #[error("Rauthy API error: {0}")]
-    RauthyApiError(String),
+    #[error("Rauthy API error: {message}")]
+    RauthyApiError { status: Option<u16>, message: String },
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
