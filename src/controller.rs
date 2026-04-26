@@ -206,7 +206,7 @@ pub struct Context {
 
 fn error_policy(_oidc_client: Arc<OIDCClient>, error: &Error, _ctx: Arc<Context>) -> Action {
     warn!("reconcile failed: {:?}", error);
-    Action::requeue(Duration::from_secs(5))
+    Action::requeue(Duration::from_mins(5))
 }
 
 pub async fn run(ctx: Arc<Context>) {
@@ -278,7 +278,7 @@ impl OIDCClient {
         // set status to success here
 
         // If no events were received, check back every 5 minutes
-        Ok(Action::requeue(Duration::from_secs(5)))
+        Ok(Action::requeue(Duration::from_mins(5)))
     }
 
     async fn ensure_secret(&self, ctx: &Context, is_new_client: bool) -> Result<()> {
