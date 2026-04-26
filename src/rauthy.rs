@@ -81,7 +81,7 @@ impl RauthyClient {
         Ok(Self { client, base_url, api_key })
     }
 
-    pub fn authz_header(&self) -> String {
+    fn authz_header(&self) -> String {
         format!("API-Key {}", self.api_key)
     }
 

@@ -111,7 +111,7 @@ pub struct OIDCClientSpec {
 
     /// Number of hours for which the existing client secret should be cached by the controller.
     /// This optionally allows graceful secret rotation and keeps the current Rauthy secret cached in-memory.
-    /// A value of 1-24 hours is allowwed here.
+    /// A value of 1-24 hours is allowed here.
     /// TODO: validate that the value is within the allowed range (https://kube.rs/controllers/admission/)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_cache_current_hours: Option<u32>,
