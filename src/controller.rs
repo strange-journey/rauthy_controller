@@ -1,19 +1,18 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use futures::StreamExt;
-use k8s_openapi::{ByteString, api::core::v1::Secret};
+use k8s_openapi::{ByteString, api::core::v1::Secret, apimachinery::pkg::apis::meta::v1::Condition};
 use serde::{Serialize, Deserialize};
 use kube::{
-    CustomResource, Resource, api::{Api, DeleteParams, ListParams, ObjectMeta, PatchParams, ResourceExt}, client::Client, runtime::{
-        controller::{Action, Controller},
-        finalizer::{Event as Finalizer, finalizer}, watcher,
+    CustomResource, Resource, api::{Api, DeleteParams, ListParams, ObjectMeta, Patch, PatchParams, ResourceExt}, client::Client, runtime::{
+        Predicate, WatchStreamExt, controller::{Action, Controller}, finalizer::{Event as Finalizer, finalizer}, predicates, reflector, watcher
     }
 };
 use schemars::JsonSchema;
+use serde_json::json;
 use tracing::*;
 
 use crate::{
-    rauthy::RauthyClient,
-    Result, Error,
+    Error, Result, rauthy::RauthyClient, set_condition
 };
 
 pub static OIDC_CLIENT_FINALIZER: &str = "rauthy.io/oidcclient-finalizer";
@@ -21,7 +20,13 @@ pub static FIELD_MANAGER: &str = "rauthy-controller";
 pub static APPLICATION_NAME: &str = "rauthy-controller";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
-#[kube(kind = "OIDCClient", group = "rauthy.io", version = "v1alpha1", namespaced)]
+#[kube(
+    kind = "OIDCClient", 
+    group = "rauthy.io", 
+    version = "v1alpha1", 
+    namespaced,
+    status = "OIDCClientStatus",
+)]
 pub struct OIDCClientSpec {
     /// The Rauthy client ID. Changing this after creation will create a new client.
     pub client_id: String,
@@ -198,6 +203,19 @@ impl OIDCClientSpec {
     }
 }
 
+pub static CONDITION_READY: &str = "Ready";
+pub static CONDITION_SECRET_READY: &str = "SecretReady";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub struct OIDCClientStatus {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "crate::conditions")]
+    pub conditions: Vec<Condition>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_name: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct Context {
     pub client: Client,
@@ -218,7 +236,14 @@ pub async fn run(ctx: Arc<Context>) {
         std::process::exit(1);
     }
 
-    Controller::new(oidc_clients, watcher::Config::default())
+    // only reconcile on change to generation or finalizers
+    let (reader, writer) = reflector::store();
+    let triggers = reflector(writer, watcher(oidc_clients, watcher::Config::default().any_semantic()))
+        .default_backoff()
+        .touched_objects()
+        .predicate_filter(predicates::generation.combine(predicates::finalizers), Default::default());
+
+    Controller::for_stream(triggers, reader)
         .owns(secrets, watcher::Config::default()
             .labels(&format!("app.kubernetes.io/managed-by={APPLICATION_NAME}")))
         .shutdown_on_signal()
@@ -243,12 +268,27 @@ async fn reconcile(oidc_client: Arc<OIDCClient>, ctx: Arc<Context>) -> Result<Ac
 
 impl OIDCClient {
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<Action> {
+        let mut status = self.status.clone().unwrap_or_default();
         let ns = self.namespace().unwrap();
-        let _oidc_clients: Api<OIDCClient> = Api::namespaced(ctx.client.clone(), &ns);
+        let oidc_clients: Api<OIDCClient> = Api::namespaced(ctx.client.clone(), &ns);
+        
+        set_condition(
+            &mut status.conditions, 
+            CONDITION_READY, 
+            "Unknown", 
+            "Reconciling", 
+            "Reconciliation in progress", 
+            self.metadata.generation.unwrap_or(1));
+        oidc_clients.patch_status(
+            &self.name_any(),
+            &PatchParams::default(),
+            &Patch::Merge(json!({ "status": status }))
+        ).await?;
+
         let client_id = &self.spec.client_id;
 
         let is_new = !ctx.rauthy.client_exists(client_id).await?;
-        (if is_new {
+        let result = if is_new {
             // if this is a new client, create with API and then update rest of fields
             info!(client_id = %client_id, "client not found in Rauthy, creating");
             ctx.rauthy.create_client(&self.spec.to_rauthy_new_client_request())
@@ -257,25 +297,81 @@ impl OIDCClient {
                 ctx.rauthy.update_client(&self.spec.to_rauthy_update_client_request())
                 .await
             )
-        }
-        else {
+        } else {
             info!(client_id = %client_id, "client exists in Rauthy, updating");
             ctx.rauthy.update_client(&self.spec.to_rauthy_update_client_request())
             .await
-        }).inspect_err(|_| {
-            // add error message to status here
-        })?;
-
-        if self.spec.confidential {
-            // call ensure_secret here..
-            self.ensure_secret(&ctx, is_new)
-            .await
-            .inspect_err(|_| {
-                // add error message to status here
-            })?;
+        };
+        if let Err(e) = result {
+            set_condition(
+                &mut status.conditions, 
+                CONDITION_READY, 
+                "False", 
+                "ReconcileFailed", 
+                &e.to_string(), 
+                self.metadata.generation.unwrap_or(1));
+            oidc_clients.patch_status(
+                &self.name_any(),
+                &PatchParams::default(),
+                &Patch::Merge(json!({ "status": status }))
+            ).await?;
+            return Err(e);
         }
 
-        // set status to success here
+        if self.spec.confidential {
+            set_condition(
+                &mut status.conditions, 
+                CONDITION_SECRET_READY, 
+                "Unknown", 
+                "Reconciling", 
+                "Reconciliation in progress", 
+                self.metadata.generation.unwrap_or(1));
+            oidc_clients.patch_status(
+                &self.name_any(),
+                &PatchParams::default(),
+                &Patch::Merge(json!({ "status": status }))
+            ).await?;
+
+            let result = self.ensure_secret(&ctx, is_new).await;
+            if let Err(e) = result {
+                set_condition(
+                    &mut status.conditions, 
+                    CONDITION_SECRET_READY, 
+                    "False", 
+                    "SecretApplyFailed", 
+                    &e.to_string(), 
+                    self.metadata.generation.unwrap_or(1));
+                oidc_clients.patch_status(
+                    &self.name_any(),
+                    &PatchParams::default(),
+                    &Patch::Merge(json!({ "status": status }))
+                ).await?;
+                return Err(e);
+            }
+
+            set_condition(
+                &mut status.conditions, 
+                CONDITION_SECRET_READY, 
+                "True", 
+                "Reconciled", 
+                "Secret exists and is up to date", 
+                self.metadata.generation.unwrap_or(1));
+            status.secret_name = self.spec.resolve_secret_name();
+        }
+
+        set_condition(
+            &mut status.conditions, 
+            CONDITION_READY, 
+            "True", 
+            "Reconciled", 
+            "OIDCClient successfully reconciled", 
+            self.metadata.generation.unwrap_or(1));
+
+        oidc_clients.patch_status(
+            &self.name_any(),
+            &PatchParams::default(),
+            &Patch::Merge(json!({ "status": status }))
+        ).await?;
 
         // If no events were received, check back every 5 minutes
         Ok(Action::requeue(Duration::from_mins(5)))
