@@ -3,7 +3,7 @@ name: rauthy-controller
 description: Kubernetes controller for managing Rauthy OIDC clients as CRDs
 type: application
 version: 0.1.0
-appVersion: 0.1.0
+appVersion: v0.1.0
 home: https://github.com/strange-journey/rauthy-controller
 sources:
   - https://github.com/strange-journey/rauthy-controller
