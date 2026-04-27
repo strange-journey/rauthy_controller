@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint-test-validate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+    
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-unknown-linux-musl
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+      
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features --locked
+
+      - name: Setup helm
+        uses: azure/setup-helm@v5.0.0
+
+      - name: Lint controller chart
+        run: helm lint charts/rauthy-controller --set rauthy.existingSecret=example-secret
+
+      - name: Lint CRD chart
+        run: helm lint charts/rauthy-controller-crds
+
+      - name: Generate CRD from source
+        run: cargo run --locked --bin crdgen > /tmp/generated-crd.yaml
+      
+      - name: Compare generated CRD with chart copy
+        run: diff -u /tmp/generated-crd.yaml charts/rauthy-controller-crds/templates/crd.yaml
+  
+  build-release:
+    needs: lint-test-validate
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl/native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build static release
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl --bin controller
+
+      - name: Inspect binary
+        run: |
+          file target/x86_64-unknown-linux-musl/release/controller
+          ldd target/x86_64-unknown-linux-musl/release/controller || true
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: controller-linux-amd64
+          path: target/x86_64-unknown-linux-musl/release/controller
