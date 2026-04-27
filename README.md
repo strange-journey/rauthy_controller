@@ -9,16 +9,47 @@ Kubernetes `Secret` containing the `client_id` and `client_secret` for confident
 
 ## Installation
 
-### CRD
+### Helm
 
-Apply the CRD from the generated output, or pipe it from `crdgen` to pick up schema changes:
+**1. Install the CRDs** (included in a separate chart):
+
+```sh
+helm install \
+    rauthy-controller-crds rauthy-controller-crds \
+    --repo https://strange-journey.github.io/rauthy-controller \
+    --version 0.1.0
+```
+
+**2. Create a Secret** with your Rauthy credentials:
+
+```sh
+kubectl create secret generic rauthy-api-secret \
+    --namespace rauthy \
+    --from-literal=RAUTHY_URL='https://rauthy.example.com' \
+    --from-literal=RAUTHY_API_KEY='example_key$Ab1C2d3E4f5G6h7I8j9K0lMnoPqRsTuVwXyZ1234567890'
+```
+The Rauthy API key must be configured with at least **CRUD access to Clients and Secrets**.
+
+**3. Install the controller chart**, referencing the secret:
+
+```sh
+helm install \
+    rauthy-controller rauthy-controller \
+    --repo https://strange-journey.github.io/rauthy-controller \
+    --version 0.1.0 \
+    --namespace rauthy --create-namespace \
+    --set rauthy.existingSecret=rauthy-api-secret
+```
+
+See [values.yaml](charts/rauthy-controller/values.yaml) for all available configuration options.
+
+## Running Locally
+
+**CRDs:** Apply from the generated output, or pipe it from `crdgen` to pick up schema changes:
 
 ```sh
 cargo run --bin crdgen | kubectl apply -f -
 ```
-
-### Controller
-
 The controller reads the following environment variables at startup:
 
 | Variable            | Required | Description                                                                                                     |
@@ -27,22 +58,13 @@ The controller reads the following environment variables at startup:
 | `RAUTHY_API_KEY`    | Yes      | API key credential in the format `<name>$<secret>`                                                              |
 | `WATCH_NAMESPACE`   | No       | Comma-separated list of namespaces to watch, e.g. `default,staging`. Watches all namespaces if unset or empty.  |
 
-The Rauthy API key must be configured with at least **CRUD access to Clients and Secrets**.
-
-## Running
-
-### Locally
+The controller can be run locally as follows:
 
 ```sh
 RAUTHY_URL='https://rauthy.example.com' \
 RAUTHY_API_KEY='mykey$mysecret' \
 cargo run
 ```
-
-### In-cluster
-
-Set `RAUTHY_URL` and `RAUTHY_API_KEY` as environment variables (or a `Secret` reference) in
-your deployment manifest, then apply it to your cluster.
 
 ## Usage
 
@@ -67,7 +89,6 @@ See [examples/oidcclient.yaml](examples/oidcclient.yaml) for an annotated exampl
 
 ## TODO
 
-- [ ] CI/CD
 - [ ] Manifests for Kustomize deployments
 - [ ] Event emission on reconcile lifecycle
 - [ ] Configurable requeue interval for secret reconciliation via spec or annotation
