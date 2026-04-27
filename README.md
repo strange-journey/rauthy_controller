@@ -19,12 +19,13 @@ cargo run --bin crdgen | kubectl apply -f -
 
 ### Controller
 
-The controller reads two required environment variables at startup:
+The controller reads the following environment variables at startup:
 
-| Variable         | Description                                                         |
-|------------------|---------------------------------------------------------------------|
-| `RAUTHY_URL`     | Base URL of the Rauthy instance, e.g. `https://rauthy.example.com` |
-| `RAUTHY_API_KEY` | API key credential in the format `<name>$<secret>`                  |
+| Variable            | Required | Description                                                                                                     |
+|---------------------|----------|-----------------------------------------------------------------------------------------------------------------|
+| `RAUTHY_URL`        | Yes      | Base URL of the Rauthy instance, e.g. `https://rauthy.example.com`                                              |
+| `RAUTHY_API_KEY`    | Yes      | API key credential in the format `<name>$<secret>`                                                              |
+| `WATCH_NAMESPACE`   | No       | Comma-separated list of namespaces to watch, e.g. `default,staging`. Watches all namespaces if unset or empty.  |
 
 The Rauthy API key must be configured with at least **CRUD access to Clients and Secrets**.
 

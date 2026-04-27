@@ -2,7 +2,6 @@ apiVersion: rauthy.io/v1alpha1
 kind: OIDCClient
 metadata:
   name: example-webapp
-  namespace: default
 spec:
   client_id: example-webapp
   confidential: true

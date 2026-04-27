@@ -1,5 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 use k8s_openapi::{ByteString, api::core::v1::Secret, apimachinery::pkg::apis::meta::v1::Condition};
 use serde::{Serialize, Deserialize};
 use kube::{
@@ -227,29 +227,68 @@ fn error_policy(_oidc_client: Arc<OIDCClient>, error: &Error, _ctx: Arc<Context>
     Action::requeue(Duration::from_mins(5))
 }
 
-pub async fn run(ctx: Arc<Context>) {
-    let oidc_clients = Api::<OIDCClient>::all(ctx.client.clone());
-    let secrets = Api::<Secret>::all(ctx.client.clone());
-    if let Err(e) = oidc_clients.list(&ListParams::default().limit(1)).await {
-        error!("CRD is not queryable; {e:?}. Is the CRD installed?");
-        info!("Installation: cargo run --bin crdgen | kubectl apply -f -");
-        std::process::exit(1);
-    }
-
-    // only reconcile on change to generation or finalizers
+pub async fn run(ctx: Arc<Context>, watch_namespaces: Vec<String>) {
     let (reader, writer) = reflector::store();
-    let triggers = reflector(writer, watcher(oidc_clients, watcher::Config::default().any_semantic()))
-        .default_backoff()
-        .touched_objects()
-        .predicate_filter(predicates::generation.combine(predicates::finalizers), Default::default());
 
-    Controller::for_stream(triggers, reader)
-        .owns(secrets, watcher::Config::default()
-            .labels(&format!("app.kubernetes.io/managed-by={APPLICATION_NAME}")))
-        .shutdown_on_signal()
-        .run(reconcile, error_policy, ctx)
-        .for_each(|_| futures::future::ready(()))
-        .await;
+    if watch_namespaces.is_empty() {
+        let oidc_clients = Api::<OIDCClient>::all(ctx.client.clone());
+        let secrets = Api::<Secret>::all(ctx.client.clone());
+        
+        if let Err(e) = oidc_clients.list(&ListParams::default().limit(1)).await {
+            error!("CRD is not queryable; {e:?}. Is the CRD installed?");
+            info!("Installation: cargo run --bin crdgen | kubectl apply -f -");
+            std::process::exit(1);
+        }
+
+        // only reconcile on change to generation or finalizers
+        let triggers = reflector(writer, watcher(oidc_clients, watcher::Config::default().any_semantic()))
+            .default_backoff()
+            .touched_objects()
+            .predicate_filter(predicates::generation.combine(predicates::finalizers), Default::default());
+        
+        Controller::for_stream(triggers, reader)
+            .owns(secrets, watcher::Config::default()
+                .labels(&format!("app.kubernetes.io/managed-by={APPLICATION_NAME}")))
+            .shutdown_on_signal()
+            .run(reconcile, error_policy, ctx)
+            .for_each(|_| futures::future::ready(()))
+            .await;
+    }
+    else {
+        let oidc_clients = Api::<OIDCClient>::namespaced(ctx.client.clone(), watch_namespaces.first().unwrap());
+        if let Err(e) = oidc_clients.list(&ListParams::default().limit(1)).await {
+            error!("CRD is not queryable; {e:?}. Is the CRD installed?");
+            info!("Installation: cargo run --bin crdgen | kubectl apply -f -");
+            std::process::exit(1);
+        }
+
+        let streams: Vec<_> = watch_namespaces.iter().map(|ns| {
+            let oidc_clients = Api::<OIDCClient>::namespaced(ctx.client.clone(), ns);
+            watcher(oidc_clients, watcher::Config::default().any_semantic())
+                .boxed()
+        }).collect();
+
+        let triggers = reflector(writer, stream::select_all(streams))
+            .touched_objects()
+            .predicate_filter(predicates::generation.combine(predicates::finalizers), Default::default());
+
+        let controller = watch_namespaces.iter().fold(
+            Controller::for_stream(triggers, reader),
+            |controller, ns| {
+                controller.owns(
+                    Api::<Secret>::namespaced(ctx.client.clone(), ns),
+                    watcher::Config::default()
+                        .labels(&format!("app.kubernetes.io/managed-by={APPLICATION_NAME}")),
+                )
+            },
+        );
+
+        controller
+            .shutdown_on_signal()
+            .run(reconcile, error_policy, ctx)
+            .for_each(|_| futures::future::ready(()))
+            .await;
+    }
 }
 
 async fn reconcile(oidc_client: Arc<OIDCClient>, ctx: Arc<Context>) -> Result<Action> {
