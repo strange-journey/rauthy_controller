@@ -7,7 +7,7 @@ use kube::{
     api::{Api, DeleteParams, ListParams, ObjectMeta, Patch, PatchParams, ResourceExt},
     client::Client,
     runtime::{
-        Predicate, WatchStreamExt,
+        Predicate, PredicateConfig, WatchStreamExt,
         controller::{Action, Controller},
         finalizer::{Event as Finalizer, finalizer},
         predicates, reflector, watcher,
@@ -123,7 +123,7 @@ pub struct OIDCClientSpec {
     /// Number of hours for which the existing client secret should be cached by the controller.
     /// This optionally allows graceful secret rotation and keeps the current Rauthy secret cached in-memory.
     /// A value of 1-24 hours is allowed here.
-    /// TODO: validate that the value is within the allowed range (https://kube.rs/controllers/admission/)
+    /// TODO: validate that the value is within the allowed range <https://kube.rs/controllers/admission/>
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_cache_current_hours: Option<u32>,
 }
@@ -255,7 +255,7 @@ pub async fn run(ctx: Arc<Context>, watch_namespaces: Vec<String>) {
         .touched_objects()
         .predicate_filter(
             predicates::generation.combine(predicates::finalizers),
-            Default::default(),
+            PredicateConfig::default(),
         );
 
         Controller::for_stream(triggers, reader)
@@ -289,7 +289,7 @@ pub async fn run(ctx: Arc<Context>, watch_namespaces: Vec<String>) {
             .touched_objects()
             .predicate_filter(
                 predicates::generation.combine(predicates::finalizers),
-                Default::default(),
+                PredicateConfig::default(),
             );
 
         let controller = watch_namespaces.iter().fold(

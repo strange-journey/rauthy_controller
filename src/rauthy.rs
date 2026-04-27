@@ -5,7 +5,7 @@ use crate::{Error, Result};
 
 static AUTHORIZATION: &str = "Authorization";
 
-/// Matches the NewClientRequest schema in the Rauthy API.
+/// Matches the `NewClientRequest`` schema in the Rauthy API.
 #[derive(Debug, Serialize)]
 pub struct NewClientRequest {
     pub id: String,
@@ -17,7 +17,7 @@ pub struct NewClientRequest {
     pub post_logout_redirect_uris: Option<Vec<String>>,
 }
 
-/// Matches the UpdateClientRequest schema in the Rauthy API.
+/// Matches the `UpdateClientRequest`` schema in the Rauthy API.
 #[derive(Debug, Serialize)]
 pub struct UpdateClientRequest {
     pub id: String,
@@ -56,7 +56,7 @@ pub struct ClientSecretRequest {
     pub cache_current_hours: Option<u32>,
 }
 
-/// Matches the ClientSecretResponse schema in the Rauthy API.
+/// Matches the `ClientSecretResponse`` schema in the Rauthy API.
 #[derive(Debug, Deserialize)]
 pub struct ClientSecretResponse {
     pub id: String,
