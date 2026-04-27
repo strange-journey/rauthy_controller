@@ -1,0 +1,85 @@
+{{- if .Values.rbac.create }}
+{{- $scope := include "rauthy-controller.rbacScope" . -}}
+
+{{- if eq $scope "cluster" }}
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "rauthy-controller.fullname" . }}
+rules:
+  # Manage OIDCClient CRDs and their status/finalizers
+  - apiGroups: ["rauthy.io"]
+    resources: ["oidcclients", "oidcclients/status", "oidcclients/finalizers"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Manage Secrets for confidential client credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  # Publish events
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create"]
+
+---
+# Binding the role to the account
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "rauthy-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    namespace: {{ $.Release.Namespace }}
+    name: {{ include "rauthy-controller.serviceAccountName" . }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "rauthy-controller.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+
+{{- else if eq $scope "namespaced" }}
+
+{{- if eq (len .Values.watchNamespaces) 0 -}}
+{{- fail "rbac.scope is set to namespaced, but watchNamespaces is empty" -}}
+{{- end }}
+
+{{- range .Values.watchNamespaces }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "rauthy-controller.fullname" $ }}
+  namespace: {{ . | quote }}
+rules:
+  # Manage OIDCClient CRDs and their status/finalizers
+  - apiGroups: ["rauthy.io"]
+    resources: ["oidcclients", "oidcclients/status", "oidcclients/finalizers"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Manage Secrets for confidential client credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  # Publish events
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create"]
+---
+# Binding the role to the account
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "rauthy-controller.fullname" $ }}
+  namespace: {{ . | quote }}
+subjects:
+  - kind: ServiceAccount
+    namespace: {{ $.Release.Namespace }}
+    name: {{ include "rauthy-controller.serviceAccountName" $ }}
+roleRef:
+  kind: Role
+  name: {{ include "rauthy-controller.fullname" $ }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+
+{{- else -}}
+{{- fail (printf "rbac.scope is set to %s, but only 'auto', 'cluster', and 'namespaced' are supported" $scope) -}}
+{{- end -}}
+
+{{- end -}}

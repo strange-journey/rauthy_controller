@@ -1,0 +1,65 @@
+{{- if ne (int .Values.replicaCount) 1 -}}
+{{- fail "rauthy-controller does not support replicaCount != 1 until leader election is implemented" -}}
+{{- end -}}
+
+{{- $image := printf "%s:%s" .Values.image.repository (include "rauthy-controller.imageTag" .) -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rauthy-controller.fullname" . }}
+  labels:
+    {{- include "rauthy-controller.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rauthy-controller.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rauthy-controller.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        kubectl.kubernetes.io/default-container: {{ .Chart.Name }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "rauthy-controller.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.logging.env_filter | quote }}
+            - name: RAUTHY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rauthy-controller.secretName" . }}
+                  key: RAUTHY_URL
+            - name: RAUTHY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rauthy-controller.secretName" . }}
+                  key: RAUTHY_API_KEY
+            {{- if gt (len .Values.watchNamespaces) 0 }}
+            - name: WATCH_NAMESPACE
+              value: {{ join "," .Values.watchNamespaces | quote }}
+            {{- end }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}

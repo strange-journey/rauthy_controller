@@ -67,7 +67,8 @@ See [examples/oidcclient.yaml](examples/oidcclient.yaml) for an annotated exampl
 
 ## TODO
 
-- [ ] Deployment examples and Helm chart
+- [ ] CI/CD
+- [ ] Manifests for Kustomize deployments
 - [ ] Event emission on reconcile lifecycle
 - [ ] Configurable requeue interval for secret reconciliation via spec or annotation
 - [ ] Additional CRDs to manage other Rauthy resources

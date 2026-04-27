@@ -1,0 +1,84 @@
+# Default values for rauthy-controller.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# The controller currently requires a single replica 
+# because leader election is not yet implemented.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/strange-journey/rauthy-controller
+  pullPolicy: IfNotPresent
+  # Overrides the image tag (defaults to appVersion)
+  tag: ""
+
+# This is for the secrets for pulling an image from a private repository - more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
+# This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+# Rauthy API connection settings.
+rauthy:
+  # Name of an existing Secret containing:
+  # - RAUTHY_URL: base URL of Rauthy instance (e.g. https://rauthy.example.com)
+  # - RAUTHY_API_KEY: API key for the controller
+  existingSecret: ""
+
+# Watch all namespaces if empty, or a list of namespaces to watch.
+watchNamespaces: []
+
+rbac:
+  # Create and bind the necessary RBAC roles for rauthy-controller. 
+  create: true
+
+  # One of: auto | cluster | namespaced
+  # - auto: create ClusterRole if watchNamespaces is empty, otherwise create Role/RoleBindings
+  # - namespaced: create Role and RoleBindings, requires watchNamespaces to be non-empty
+  # - cluster: create ClusterRole and ClusterRoleBinding
+  scope: auto
+
+serviceAccount:
+  # Specifies whether a service account should be created.
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account.
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+  # fsGroup: 10001
+
+# Container security context. These defaults follow the recommended settings from
+# https://kube.rs/controllers/security/#container-permissions
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+logging:
+  # RUST_LOG filter for the controller. Adjust this to control log verbosity.
+  env_filter: "info,rauthy_controller=debug"
+
+# Additional environment variables for the controller container.
+# Example:
+# env:
+#   - name: RUST_BACKTRACE
+#     value: "full"
+env: []
