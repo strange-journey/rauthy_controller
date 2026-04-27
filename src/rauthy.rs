@@ -1,7 +1,7 @@
 use reqwest::{Client, StatusCode};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::{Result, Error};
+use crate::{Error, Result};
 
 static AUTHORIZATION: &str = "Authorization";
 
@@ -53,7 +53,7 @@ pub struct UpdateClientRequest {
 
 #[derive(Debug, Serialize)]
 pub struct ClientSecretRequest {
-    pub cache_current_hours: Option<u32>
+    pub cache_current_hours: Option<u32>,
 }
 
 /// Matches the ClientSecretResponse schema in the Rauthy API.
@@ -76,9 +76,16 @@ impl RauthyClient {
     pub fn new(base_url: String, api_key: String) -> Result<Self> {
         let client = Client::builder()
             .build()
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("Failed to build HTTP client: {e}") })?;
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("Failed to build HTTP client: {e}"),
+            })?;
 
-        Ok(Self { client, base_url, api_key })
+        Ok(Self {
+            client,
+            base_url,
+            api_key,
+        })
     }
 
     fn authz_header(&self) -> String {
@@ -87,13 +94,17 @@ impl RauthyClient {
 
     pub async fn client_exists(&self, id: &str) -> Result<bool> {
         let url = format!("{}/auth/v1/clients/{id}", self.base_url);
-        let res = self.client
+        let res = self
+            .client
             .get(&url)
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("GET /clients/{id}: {e}") })?;
-        
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("GET /clients/{id}: {e}"),
+            })?;
+
         match res.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
@@ -109,14 +120,18 @@ impl RauthyClient {
 
     pub async fn create_client(&self, req: &NewClientRequest) -> Result<()> {
         let url = format!("{}/auth/v1/clients", self.base_url);
-        let res = self.client
+        let res = self
+            .client
             .post(&url)
             .header(AUTHORIZATION, self.authz_header())
             .json(req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("POST /clients: {e}") })?;
-            
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("POST /clients: {e}"),
+            })?;
+
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
@@ -130,14 +145,18 @@ impl RauthyClient {
 
     pub async fn update_client(&self, req: &UpdateClientRequest) -> Result<()> {
         let url = format!("{}/auth/v1/clients/{}", self.base_url, req.id);
-        let res = self.client
+        let res = self
+            .client
             .put(&url)
             .header(AUTHORIZATION, self.authz_header())
             .json(req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("PUT /clients/{}: {e}", req.id) })?;
-            
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("PUT /clients/{}: {e}", req.id),
+            })?;
+
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
@@ -151,12 +170,16 @@ impl RauthyClient {
 
     pub async fn delete_client(&self, id: &str) -> Result<()> {
         let url = format!("{}/auth/v1/clients/{id}", self.base_url);
-        let res = self.client
+        let res = self
+            .client
             .delete(&url)
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("DELETE /clients/{id}: {e}") })?;
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("DELETE /clients/{id}: {e}"),
+            })?;
 
         match res.status() {
             StatusCode::OK | StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
@@ -172,12 +195,16 @@ impl RauthyClient {
 
     pub async fn get_client_secret(&self, id: &str) -> Result<String> {
         let url = format!("{}/auth/v1/clients/{id}/secret", self.base_url);
-        let res = self.client
+        let res = self
+            .client
             .post(&url)
             .header(AUTHORIZATION, self.authz_header())
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("POST /clients/{id}/secret: {e}") })?;
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("POST /clients/{id}/secret: {e}"),
+            })?;
 
         if !res.status().is_success() {
             let status = res.status();
@@ -188,27 +215,39 @@ impl RauthyClient {
             });
         }
 
-        let secret_response: ClientSecretResponse = res
-            .json()
-            .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("failed to parse secret response: {e}") })?;
+        let secret_response: ClientSecretResponse =
+            res.json().await.map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("failed to parse secret response: {e}"),
+            })?;
 
-        secret_response.secret.ok_or_else(|| {
-            Error::RauthyApiError { status: None, message: format!("The API response did not contain the secret for client {id}") }
+        secret_response.secret.ok_or_else(|| Error::RauthyApiError {
+            status: None,
+            message: format!("The API response did not contain the secret for client {id}"),
         })
     }
 
-    pub async fn generate_client_secret(&self, id: &str, cache_current_hours: Option<u32>) -> Result<String> {
+    pub async fn generate_client_secret(
+        &self,
+        id: &str,
+        cache_current_hours: Option<u32>,
+    ) -> Result<String> {
         let url = format!("{}/auth/v1/clients/{id}/secret", self.base_url);
-        let req = ClientSecretRequest { cache_current_hours };
-        let res = self.client
+        let req = ClientSecretRequest {
+            cache_current_hours,
+        };
+        let res = self
+            .client
             .put(&url)
             .header(AUTHORIZATION, self.authz_header())
             .json(&req)
             .send()
             .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("PUT /clients/{id}/secret: {e}") })?;
-    
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("PUT /clients/{id}/secret: {e}"),
+            })?;
+
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
@@ -218,13 +257,15 @@ impl RauthyClient {
             });
         }
 
-        let secret_response: ClientSecretResponse = res
-            .json()
-            .await
-            .map_err(|e| Error::RauthyApiError { status: None, message: format!("failed to parse secret response: {e}") })?;
+        let secret_response: ClientSecretResponse =
+            res.json().await.map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("failed to parse secret response: {e}"),
+            })?;
 
-        secret_response.secret.ok_or_else(|| {
-            Error::RauthyApiError { status: None, message: format!("The API response did not contain the secret for client {id}") }
+        secret_response.secret.ok_or_else(|| Error::RauthyApiError {
+            status: None,
+            message: format!("The API response did not contain the secret for client {id}"),
         })
     }
 }
