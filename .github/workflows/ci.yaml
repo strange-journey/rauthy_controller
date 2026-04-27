@@ -70,7 +70,7 @@ jobs:
       - name: Install musl/native build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools
+          sudo apt-get install -y musl-tools cmake
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
