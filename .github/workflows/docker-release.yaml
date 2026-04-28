@@ -19,23 +19,34 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
       - name: Install musl/native build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools cmake
 
+      - name: Install cross
+        run: cargo install cross --locked
+
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build static release
+      - name: Build static release for amd64
         env:
           CC_x86_64_unknown_linux_musl: musl-gcc
         run: cargo build --release --locked --target x86_64-unknown-linux-musl --bin controller
 
-      - name: Prepare Docker artifact
-        run: cp target/x86_64-unknown-linux-musl/release/controller ./controller
+      - name: Build static release for arm64
+        env:
+          CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+        run: cross build --release --locked --target aarch64-unknown-linux-musl --bin controller
+
+      - name: Prepare Docker artifacts
+        run: |
+          mkdir -p dist/linux/amd64 dist/linux/arm64
+          cp target/x86_64-unknown-linux-musl/release/controller dist/linux/amd64/controller
+          cp target/aarch64-unknown-linux-musl/release/controller dist/linux/arm64/controller
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -60,6 +71,6 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -1,3 +1,6 @@
 FROM cgr.dev/chainguard/static
-COPY --chown=nonroot:nonroot ./controller /app/controller
+
+ARG TARGETARCH
+COPY --chown=nonroot:nonroot ./dist/linux/${TARGETARCH}/controller /app/controller
+
 ENTRYPOINT ["/app/controller"]
