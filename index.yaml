@@ -3,6 +3,19 @@ entries:
   rauthy-controller:
   - apiVersion: v2
     appVersion: v0.1.1
+    created: "2026-04-28T07:54:53.913172557Z"
+    description: Kubernetes controller for managing Rauthy OIDC clients as CRDs
+    digest: a6a3e3b8b6269fc60b83d4b8119e467f40ce2b6583885f91f2f14ac8b3a011a0
+    home: https://github.com/strange-journey/rauthy-controller
+    name: rauthy-controller
+    sources:
+    - https://github.com/strange-journey/rauthy-controller
+    type: application
+    urls:
+    - https://github.com/strange-journey/rauthy-controller/releases/download/rauthy-controller-0.1.2/rauthy-controller-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: v0.1.1
     created: "2026-04-28T03:56:22.114867278Z"
     description: Kubernetes controller for managing Rauthy OIDC clients as CRDs
     digest: 5221581a728749cb4a6cbe172ff60dd01e9628a62bacc31fb0ab457fd1ca9e5f
@@ -30,6 +43,19 @@ entries:
   rauthy-controller-crds:
   - apiVersion: v2
     appVersion: v0.1.1
+    created: "2026-04-28T07:54:54.148046862Z"
+    description: CustomResourceDefinitions for rauthy-controller
+    digest: 6a05d807cfdbb8295447bfa25d7ded33dd3778362de7675dba66bcacdd02833d
+    home: https://github.com/strange-journey/rauthy-controller
+    name: rauthy-controller-crds
+    sources:
+    - https://github.com/strange-journey/rauthy-controller
+    type: application
+    urls:
+    - https://github.com/strange-journey/rauthy-controller/releases/download/rauthy-controller-crds-0.1.2/rauthy-controller-crds-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: v0.1.1
     created: "2026-04-28T03:56:22.236320185Z"
     description: CustomResourceDefinitions for rauthy-controller
     digest: 7ddf7a53ca65ca0bad17e9397fbf004a9fa7436cc0a4b7c6d26daf724d848a6b
@@ -54,4 +80,4 @@ entries:
     urls:
     - https://github.com/strange-journey/rauthy-controller/releases/download/rauthy-controller-crds-0.1.0/rauthy-controller-crds-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-28T03:56:22.236332263Z"
+generated: "2026-04-28T07:54:54.14807253Z"
