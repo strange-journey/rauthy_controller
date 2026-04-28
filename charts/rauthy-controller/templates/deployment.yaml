@@ -8,6 +8,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "rauthy-controller.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "rauthy-controller.labels" . | nindent 4 }}
 spec:
