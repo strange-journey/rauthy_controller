@@ -1,7 +1,8 @@
-use reqwest::{Client, StatusCode};
+use base64::Engine;
+use reqwest::{Client, StatusCode, multipart};
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result};
+use crate::{Error, OIDCClientLogo, Result};
 
 static AUTHORIZATION: &str = "Authorization";
 
@@ -188,6 +189,73 @@ impl RauthyClient {
                 Err(Error::RauthyApiError {
                     status: Some(status.as_u16()),
                     message: format!("DELETE /clients/{id} returned {status}: {body}"),
+                })
+            }
+        }
+    }
+
+    pub async fn update_client_logo(&self, id: &str, logo: &OIDCClientLogo) -> Result<()> {
+        let url = format!("{}/auth/v1/clients/{id}/logo", self.base_url);
+
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&logo.base64data)
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("invalid base64 logo data for client {id}: {e}"),
+            })?;
+
+        let part = multipart::Part::bytes(bytes)
+            .mime_str(&logo.mediatype)
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("invalid logo media type '{}': {e}", logo.mediatype),
+            })?;
+
+        let form = multipart::Form::new().part("logo", part);
+
+        let res = self
+            .client
+            .put(&url)
+            .header(AUTHORIZATION, self.authz_header())
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("PUT /clients/{id}/logo: {e}"),
+            })?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(Error::RauthyApiError {
+                status: Some(status.as_u16()),
+                message: format!("PUT /clients/{id}/logo returned {status}: {body}"),
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn delete_client_logo(&self, id: &str) -> Result<()> {
+        let url = format!("{}/auth/v1/clients/{id}/logo", self.base_url);
+        let res = self
+            .client
+            .delete(&url)
+            .header(AUTHORIZATION, self.authz_header())
+            .send()
+            .await
+            .map_err(|e| Error::RauthyApiError {
+                status: None,
+                message: format!("DELETE /clients/{id}/logo: {e}"),
+            })?;
+
+        match res.status() {
+            StatusCode::OK | StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
+            status => {
+                let body = res.text().await.unwrap_or_default();
+                Err(Error::RauthyApiError {
+                    status: Some(status.as_u16()),
+                    message: format!("DELETE /clients/{id}/logo returned {status}: {body}"),
                 })
             }
         }

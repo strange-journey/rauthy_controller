@@ -125,6 +125,21 @@ pub struct OIDCClientSpec {
     /// A value of 1-24 hours is allowed here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_cache_current_hours: Option<u32>,
+
+    /// An optional base64-encoded logo for the client, set in a base64data field with a mediatype.
+    /// The image is downscaled in Rauthy to a resolution no greater than 128x128px.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<OIDCClientLogo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OIDCClientLogo {
+    /// Base64-encoded image byte data.
+    pub base64data: String,
+
+    /// MIME type for the image.
+    /// Rauthy supports `image/svg+xml`, `image/png`, and `image/jpeg`.
+    pub mediatype: String,
 }
 
 fn default_true() -> bool {
@@ -388,6 +403,11 @@ impl OIDCClient {
                 )
                 .await?;
             return Err(e);
+        }
+
+        if let Some(logo) = &self.spec.logo {
+            info!(client_id = %client_id, "updating client logo");
+            ctx.rauthy.update_client_logo(client_id, logo).await?;
         }
 
         if self.spec.confidential {

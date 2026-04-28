@@ -98,6 +98,24 @@ spec:
                 default: EdDSA
                 description: Algorithm used to sign ID tokens (`RS256`, `RS384`, `RS512`, `EdDSA`).
                 type: string
+              logo:
+                description: |-
+                  An optional base64-encoded logo for the client, set in a base64data field with a mediatype.
+                  The image is downscaled in Rauthy to a resolution no greater than 128x128px.
+                nullable: true
+                properties:
+                  base64data:
+                    description: Base64-encoded image byte data.
+                    type: string
+                  mediatype:
+                    description: |-
+                      MIME type for the image.
+                      Rauthy supports `image/svg+xml`, `image/png`, and `image/jpeg`.
+                    type: string
+                required:
+                - base64data
+                - mediatype
+                type: object
               name:
                 description: Human-readable display name for the client.
                 nullable: true
