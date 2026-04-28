@@ -2,8 +2,9 @@ name: Release Helm charts
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
+      - 'chart-*'
 
 jobs:
   release:
@@ -16,10 +17,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Import GPG key and configure Git
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.CR_GPG_PRIVATE_KEY }}
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          echo -n "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+          GPG_FPR=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" {print $10; exit}')
+
+          git config --global user.name "$GITHUB_ACTOR"
+          git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git config --global user.signingkey "$GPG_FPR"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgsign true
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
